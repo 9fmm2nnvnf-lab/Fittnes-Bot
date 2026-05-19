@@ -1,188 +1,268 @@
-from models import stat_bar, energy_emoji, mood_emoji, level_title
+from models import (stat_bar, energy_emoji, mood_emoji, level_title,
+                    get_avatar, calculate_daily_kbzhu, calculate_bmi, bmi_category,
+                    SHOP_ITEMS)
 
-
-# ──────────────────────────────────────────────
-#  /start
-# ──────────────────────────────────────────────
+# ── /start ──────────────────────────────────────────────────────────────────
 
 WELCOME_NEW = """
 🎮 *Добро пожаловать в Life Simulator!*
 
-Ты только что создал своего персонажа — цифрового двойника, который растёт вместе с тобой.
+Это не просто трекер — это твой цифровой двойник.
+Он ест, тренируется и растёт вместе с тобой.
 
-Ешь — он наберётся сил.
-Тренируйся — он станет мощнее.
-Ленись — и он это почувствует 😅
-
-Как назовём твоего героя?
-_(просто напиши имя)_
+Давай создадим персонажа! Как тебя зовут?
+_(напиши своё имя)_
 """
 
-WELCOME_BACK = """
-👾 *С возвращением, {name}!*
+WELCOME_BACK = "👾 *С возвращением, {name}!*\n\nПерсонаж скучал. Время действовать! 💪"
 
-Твой персонаж скучал. Время действовать!
-"""
+def ask_gender():
+    return "Отлично, *{name}*! 🎉\n\nКакой пол у твоего персонажа?"
 
+def ask_age():
+    return "Сколько тебе лет? _(напиши число)_"
 
-def character_created(name: str) -> str:
+def ask_body_type():
+    return """Выбери начальное телосложение персонажа:
+
+🦴 /slim — Худощавый
+🙂 /normal — Нормальный  
+💪 /thick — Плотный
+🐻 /heavy — Массивный"""
+
+def character_created(char):
+    avatar = get_avatar(char)
     return f"""
 ✨ *Персонаж создан!*
 
-Имя: *{name}*
-Уровень: 1 — 🥚 Новичок
+{avatar} *{char['name']}*
+Уровень 1 — 🥚 Новичок
 
-Начальные характеристики установлены. Удачи, герой!
+Теперь заполни профиль для расчёта КБЖУ:
+👉 /profile
 
-Используй:
-• /food — покормить персонажа 🍎
-• /workout — провести тренировку 💪
-• /rest — отдохнуть 😴
-• /status — посмотреть статус 📊
+Команды:
+• /food — записать еду 🍽
+• /workout — тренировка 💪
+• /rest — отдых 😴
+• /measurements — замеры 📏
+• /status — твой персонаж 📊
+• /shop — магазин 🛍
 """
 
+# ── /profile ─────────────────────────────────────────────────────────────────
 
-# ──────────────────────────────────────────────
-#  /food
-# ──────────────────────────────────────────────
+ASK_WEIGHT = "⚖️ Введи свой вес в кг _(например: 65)_"
+ASK_HEIGHT = "📏 Введи рост в см _(например: 168)_"
+ASK_GOAL   = """🎯 Какая цель?
+
+📉 /lose — Похудеть
+⚖️ /maintain — Поддержать вес
+📈 /gain — Набрать массу"""
+ASK_AGE    = "🎂 Введи свой возраст _(например: 25)_"
+
+def profile_saved(char):
+    kbzhu = calculate_daily_kbzhu(char)
+    bmi   = calculate_bmi(char)
+    return f"""
+✅ *Профиль сохранён!*
+
+👤 {char['name']}, {char['age']} лет
+⚖️ Вес: {char['weight']} кг  |  📏 Рост: {char['height']} см
+📊 ИМТ: {bmi} — {bmi_category(bmi)}
+
+*Твоя дневная норма:*
+🔥 Калории: {kbzhu['calories']} ккал
+🥩 Белки:   {kbzhu['protein']} г
+🧈 Жиры:    {kbzhu['fat']} г
+🍞 Углеводы:{kbzhu['carbs']} г
+
+Норма пересчитывается автоматически после каждой тренировки!
+"""
+
+# ── /food ────────────────────────────────────────────────────────────────────
 
 FOOD_PROMPT = """
-🍽 *Что ел твой герой?*
+🍽 *Что поел твой персонаж?*
 
-Напиши любым текстом — например:
-_"гречка с курицей"_ или _"шоколадка (без осуждения)"_
+Можешь написать текстом:
+_"гречка 200г с курицей 150г"_
 
-Бот определит: полезная еда 🥦, вредная 🍔 или нейтральная 🍞 — и начислит бонусы соответственно.
+Или отправь 📷 *фото тарелки* — AI сам разберётся!
 """
 
+def food_result(char, food_data):
+    kbzhu    = calculate_daily_kbzhu(char)
+    cal_left = max(0, kbzhu['calories'] - char['calories_today'])
+    p_left   = max(0, kbzhu['protein']  - char['protein_today'])
+    f_left   = max(0, kbzhu['fat']      - char['fat_today'])
+    c_left   = max(0, kbzhu['carbs']    - char['carbs_today'])
 
-def food_result(char: dict, food_text: str, category: str) -> str:
-    if category == "healthy":
-        header  = "🥦 *Здоровое питание! Герой в восторге!*"
-        bonuses = "⚡ +20 Энергия  •  😄 +10 Настроение  •  🧠 +3 Интеллект  •  ✨ +30 XP"
-        comment = "Твой герой питается как чемпион. Так держать! 🏆"
-    elif category == "junk":
-        header  = "🍔 *Вредная еда... но как вкусно!*"
-        bonuses = "⚡ +10 Энергия  •  😄 +15 Настроение  •  💪 −3 Сила  •  ✨ +10 XP"
-        comment = _junk_comment(char.get("junk_meals", 0))
-    else:
-        header  = "🍞 *Поел. Нормально.*"
-        bonuses = "⚡ +15 Энергия  •  😄 +5 Настроение  •  ✨ +20 XP"
-        comment = "Простая еда — тоже топливо для героя."
+    pct = min(100, round(char['calories_today'] / kbzhu['calories'] * 100))
 
     return f"""
-{header}
+🍽 *{food_data['name']}*
 
-Съел: _{food_text}_
+🔥 {food_data['kcal']} ккал  •  🥩 Б: {food_data['protein']}г  •  🧈 Ж: {food_data['fat']}г  •  🍞 У: {food_data['carbs']}г
 
-{bonuses}
+*Съедено за день:*
+{stat_bar(char['calories_today'], kbzhu['calories'])} {pct}%
+{char['calories_today']} / {kbzhu['calories']} ккал
 
-⚡ Энергия:    {stat_bar(char['energy'])} {char['energy']}/100
-😄 Настроение: {stat_bar(char['mood'])} {char['mood']}/100
-🧠 Интеллект:  {stat_bar(char['intellect'])} {char['intellect']}/100
+*Осталось на сегодня:*
+🔥 {cal_left} ккал  •  🥩 {p_left}г  •  🧈 {f_left}г  •  🍞 {c_left}г
 
-_{comment}_
+✨ +{25 if pct<=110 else 10} XP  •  +5 🪙
+
+_{food_data.get('comment','Отличный выбор!')}_
 """
 
+def food_log(char):
+    log = char.get("food_log_today", [])
+    if not log:
+        return "📋 Сегодня ещё ничего не записано. Используй /food!"
+    lines = ["📋 *Еда за сегодня:*\n"]
+    for i, item in enumerate(log, 1):
+        lines.append(f"{i}. {item['time']} — {item['name']} ({item['kcal']} ккал)")
+    kbzhu = calculate_daily_kbzhu(char)
+    lines.append(f"\n*Итого:* {char['calories_today']} / {kbzhu['calories']} ккал")
+    return "\n".join(lines)
 
-def _junk_comment(junk_count: int) -> str:
-    if junk_count <= 1:
-        return "Раз в жизни можно. Герой не осуждает себя."
-    if junk_count <= 3:
-        return "Уже {j}-й раз... Может, разбавить чем-то полезным? 🥦".format(j=junk_count)
-    return "Герой превращается в диванного короля 👑 Добавь тренировку — /workout"
+# ── /workout ──────────────────────────────────────────────────────────────────
 
+ASK_WORKOUT_TYPE = """
+💪 *Какая тренировка?*
 
-# ──────────────────────────────────────────────
-#  /rest
-# ──────────────────────────────────────────────
-
-REST_VARIANTS = [
-    ("😴", "Герой вздремнул", "Короткий сон восстановил силы."),
-    ("🛋", "Герой полежал на диване", "Иногда ничегонеделание — тоже стратегия."),
-    ("🧘", "Герой помедитировал", "Разум очистился. Интеллект растёт."),
-    ("📖", "Герой почитал книгу", "Лежать с умной книгой — это тоже отдых."),
-    ("🎮", "Герой поиграл в игры", "Разгрузка мозга засчитана!"),
-]
-
-
-def rest_result(char: dict) -> str:
-    import random
-    emoji, action, comment = random.choice(REST_VARIANTS)
-    rests = char.get("rests_today", 1)
-
-    return f"""
-{emoji} *{action}!*
-
-⚡ +30 Энергия  •  😄 +15 Настроение  •  🧠 +2 Интеллект  •  ✨ +10 XP
-
-⚡ Энергия:    {stat_bar(char['energy'])} {char['energy']}/100
-😄 Настроение: {stat_bar(char['mood'])} {char['mood']}/100
-🧠 Интеллект:  {stat_bar(char['intellect'])} {char['intellect']}/100
-
-_{comment}_
-{_rest_warning(rests)}"""
-
-
-def _rest_warning(rests: int) -> str:
-    if rests >= 3:
-        return "\n⚠️ _Много отдыхаешь, герой. Может, /workout?_"
-    return ""
-
-
-# ──────────────────────────────────────────────
-#  /workout
-# ──────────────────────────────────────────────
-
-WORKOUT_PROMPT = """
-🏋️ *Какую тренировку провёл твой герой?*
-
-Напиши что угодно:
-_"30 минут бег"_ или _"отжимания 3х20"_
+🏋️ /strength — Силовая
+🏃 /cardio — Кардио
+🧘 /yoga — Йога/растяжка
+🚴 /cycling — Велосипед/велотренажёр
+🏊 /swimming — Плавание
+⚽ /sport — Командный спорт
 """
 
+ASK_WORKOUT_INTENSITY = """
+Интенсивность тренировки?
 
-def workout_result(char: dict, workout_text: str) -> str:
+😌 /light — Лёгкая
+💪 /medium — Средняя
+🔥 /hard — Тяжёлая
+"""
+
+ASK_WORKOUT_DURATION = "⏱ Сколько минут тренировался? _(напиши число)_"
+
+def workout_result(char, workout_type, intensity, duration, xp_gain, coin_gain):
+    intensity_names = {"light":"Лёгкая 😌","medium":"Средняя 💪","hard":"Тяжёлая 🔥"}
     return f"""
 💥 *Тренировка засчитана!*
 
-Упражнение: _{workout_text}_
+🏋️ {workout_type}
+⚡ {intensity_names.get(intensity,'Средняя')} • ⏱ {duration} мин
 
-💪 Сила:      {stat_bar(char['strength'])} {char['strength']}/100
-⚡ Энергия:   {stat_bar(char['energy'])}   {char['energy']}/100
-😄 Настроение:{stat_bar(char['mood'])}     {char['mood']}/100
-✨ Опыт:      +50 XP
+💪 Сила:      {stat_bar(char['strength'])} {char['strength']}
+⚡ Энергия:   {stat_bar(char['energy'])} {char['energy']}
+😄 Настроение:{stat_bar(char['mood'])} {char['mood']}
 
-_{_workout_comment(char['workouts_today'])}_
+✨ +{xp_gain} XP  •  +{coin_gain} 🪙
+
+_Норма КБЖУ пересчитана с учётом активности!_
 """
 
+# ── /rest ─────────────────────────────────────────────────────────────────────
 
-def _workout_comment(workouts: int) -> str:
-    comments = [
-        "Первая тренировка дня — герой гордится собой!",
-        "Дважды за день?! Это уже серьёзно 🔥",
-        "Три тренировки. Твой герой — машина. Отдохни немного.",
-    ]
-    return comments[min(workouts - 1, len(comments) - 1)]
+ASK_REST_TYPE = """
+😴 *Как отдыхаешь?*
 
+🛏 /sleep — Сон
+📖 /book — Читаю книгу
+📱 /phone — Сижу в телефоне
+🚶 /activity — Смена деятельности
+"""
 
-# ──────────────────────────────────────────────
-#  /status
-# ──────────────────────────────────────────────
+ASK_SLEEP_HOURS = "🛏 Сколько часов поспал? _(например: 8)_"
 
-def status_message(char: dict) -> str:
-    level     = char["level"]
-    xp        = char["xp"]
-    xp_needed = level * 100
-    title     = level_title(level)
-    healthy   = char.get("healthy_meals", 0)
-    junk      = char.get("junk_meals", 0)
-    rests     = char.get("total_rests", 0)
+def rest_result(char, rest_type):
+    names = {"sleep":"Сон 🛏","book":"Чтение 📖","phone":"Телефон 📱","activity":"Смена деятельности 🚶"}
+    tips  = {
+        "sleep":    "Хороший сон — лучшее восстановление!",
+        "book":     "Умный персонаж — сильный персонаж! 🧠",
+        "phone":    "Иногда можно, но не злоупотребляй 😅",
+        "activity": "Смена деятельности — тоже отдых!",
+    }
+    return f"""
+✅ *{names.get(rest_type,'Отдых')} засчитан!*
+
+⚡ Энергия:    {stat_bar(char['energy'])} {char['energy']}
+🧠 Интеллект:  {stat_bar(char['intellect'])} {char['intellect']}
+😄 Настроение: {stat_bar(char['mood'])} {char['mood']}
+
+_{tips.get(rest_type,'Отдых важен!')}_
+"""
+
+# ── /measurements ─────────────────────────────────────────────────────────────
+
+ASK_MEASUREMENTS = """
+📏 *Замеры тела*
+
+Вводи по одному — я спрошу каждый:
+• Вес (кг)
+• Талия (см)
+• Грудь (см)
+• Плечи (см)
+• Ягодицы (см)
+• Бёдра (см)
+• Бицепс руки (см)
+• Бицепс бедра (см)
+
+Начнём! Введи вес в кг:
+"""
+
+MEASUREMENT_QUESTIONS = [
+    ("weight_kg",    "⚖️ Вес (кг):"),
+    ("waist",        "📏 Талия (см):"),
+    ("chest",        "📏 Грудь (см):"),
+    ("shoulders",    "📏 Плечи (см):"),
+    ("glutes",       "📏 Ягодицы (см):"),
+    ("hips",         "📏 Бёдра (см):"),
+    ("bicep_arm",    "📏 Бицепс руки (см):"),
+    ("bicep_leg",    "📏 Бицепс бедра (см):"),
+]
+
+def measurements_result(char, data, prev_data):
+    lines = ["📊 *Замеры сохранены!* +30 XP  +15 🪙\n"]
+    labels = {
+        "weight_kg":"⚖️ Вес","waist":"Талия","chest":"Грудь",
+        "shoulders":"Плечи","glutes":"Ягодицы","hips":"Бёдра",
+        "bicep_arm":"Бицепс руки","bicep_leg":"Бицепс бедра"
+    }
+    for key, label in labels.items():
+        val = data.get(key, "—")
+        if prev_data and key in prev_data:
+            diff = round(float(val) - float(prev_data[key]), 1)
+            sign = "+" if diff > 0 else ""
+            lines.append(f"{label}: *{val}* ({sign}{diff})")
+        else:
+            lines.append(f"{label}: *{val}*")
+    lines.append("\n_Следующие замеры через неделю!_")
+    return "\n".join(lines)
+
+# ── /status ───────────────────────────────────────────────────────────────────
+
+def status_message(char):
+    avatar  = get_avatar(char)
+    level   = char["level"]
+    xp      = char["xp"]
+    xp_need = level * 100
+    kbzhu   = calculate_daily_kbzhu(char)
+    cal_pct = min(100, round(char.get("calories_today",0) / kbzhu["calories"] * 100))
+
+    inv = char.get("inventory", [])
+    inv_str = " ".join([SHOP_ITEMS[i]["name"].split()[0] for i in inv]) if inv else "пусто"
 
     return f"""
-🧬 *Персонаж: {char['name']}*
-{title} — Уровень {level}
-Опыт: [{stat_bar(xp, xp_needed)}] {xp}/{xp_needed} XP
+{avatar} *{char['name']}*
+{level_title(level)} — Уровень {level}
+[{stat_bar(xp, xp_need)}] {xp}/{xp_need} XP  •  🪙 {char.get('coins',0)}
 
 ━━━━━━━━━━━━━━━━━
 {energy_emoji(char['energy'])} Энергия:     {stat_bar(char['energy'])} {char['energy']}
@@ -191,41 +271,46 @@ def status_message(char: dict) -> str:
 {mood_emoji(char['mood'])} Настроение:  {stat_bar(char['mood'])} {char['mood']}
 ━━━━━━━━━━━━━━━━━
 
-📈 *Статистика:*
-• Всего приёмов пищи: {char['total_meals']} (🥦 {healthy} полезных / 🍔 {junk} вредных)
-• Всего тренировок:  {char['total_workouts']}
-• Всего отдыхов:     {rests}
+🍽 *Питание сегодня:*
+{stat_bar(char.get('calories_today',0), kbzhu['calories'])} {cal_pct}%
+{char.get('calories_today',0)} / {kbzhu['calories']} ккал
+
+🎒 Инвентарь: {inv_str}
+
+📈 Тренировок всего: {char.get('total_workouts',0)}
+🍎 Приёмов пищи: {char.get('total_meals',0)}
 
 _{_status_tip(char)}_
 """
 
+def _status_tip(char):
+    kbzhu = calculate_daily_kbzhu(char)
+    cal   = char.get("calories_today",0)
+    if char["energy"] < 30: return "⚠️ Срочно поешь — герой без сил! /food"
+    if cal < kbzhu["calories"] * 0.5: return "🍽 Ты мало ел сегодня. Не забывай про питание!"
+    if cal > kbzhu["calories"] * 1.2: return "⚠️ Перебор калорий! Полегче с едой 😅"
+    if char["workouts_today"] == 0: return "💪 Сегодня ещё нет тренировки. Давай — /workout!"
+    return "🔥 Всё идёт отлично. Так держать!"
 
-def _status_tip(char: dict) -> str:
-    if char["energy"] < 30:
-        return "⚠️ Герой устал — срочно поешь! /food"
-    if char["strength"] < 20:
-        return "💡 Хочешь стать сильнее? Время тренировки — /workout"
-    if char["mood"] < 30:
-        return "😤 Настроение на нуле. Может, размяться?"
-    if char["level"] >= 5:
-        return "🔥 Ты в огне. Продолжай в том же духе!"
-    return "✨ Всё идёт по плану. Так держать, герой!"
+# ── /shop ─────────────────────────────────────────────────────────────────────
 
+def shop_message(char):
+    coins = char.get("coins", 0)
+    inv   = char.get("inventory", [])
+    lines = [f"🛍 *Магазин*  •  У тебя: 🪙 {coins}\n"]
+    for key, item in SHOP_ITEMS.items():
+        owned = "✅ Куплено" if key in inv else f"{item['price']} 🪙"
+        lines.append(f"{item['name']} — {item['desc']}\n  /{key} • {owned}\n")
+    return "\n".join(lines)
 
-# ──────────────────────────────────────────────
-#  Level up
-# ──────────────────────────────────────────────
-
-def levelup_message(char: dict) -> str:
+def levelup_message(char):
     return f"""
 🎉 *LEVEL UP!*
 
-Твой герой достиг уровня *{char['level']}*!
-Новый титул: {level_title(char['level'])}
+{get_avatar(char)} Уровень *{char['level']}*!
+{level_title(char['level'])}
 
-⚡ +20 к Энергии
-😄 +20 к Настроению
-🧠 +5 к Интеллекту
+⚡ +20 Энергия  •  😄 +20 Настроение  •  🧠 +5 Интеллект  •  🪙 +50 монет
 
 Ты становишься лучше каждый день 💥
 """
