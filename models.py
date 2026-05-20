@@ -29,6 +29,7 @@ def reset_daily_if_needed(char):
             "protein_today": 0, "fat_today": 0, "carbs_today": 0,
             "meals_today": 0, "workouts_today": 0, "rests_today": 0,
             "food_log_today": [], "activity_level": "low",
+            "calories_burned_today": 0,
         })
     return char
 
@@ -105,11 +106,16 @@ def do_workout(char, workout_type, intensity, duration_min):
     char["mood"]=_clamp(char["mood"]+10)
     char["xp"]+=xp_g; char["coins"]+=coin_g
     char["workouts_today"]+=1; char["total_workouts"]+=1
+    # Считаем сожжённые калории
+    weight = char.get("weight", 70)
+    burned = calories_burned(weight, workout_type, intensity, duration_min)
+    char["calories_burned_today"] = char.get("calories_burned_today", 0) + burned
+    char["total_calories_burned"] = char.get("total_calories_burned", 0) + burned
     if char["workouts_today"]>=2: char["activity_level"]="high"
     elif intensity=="hard": char["activity_level"]="medium"
     else: char["activity_level"]="light"
     char["last_action"]=datetime.now().isoformat()
-    return _check_level_up(char), xp_g, coin_g
+    return _check_level_up(char), xp_g, coin_g, burned
 
 def do_rest(char, rest_type, hours=0):
     char = reset_daily_if_needed(char)
@@ -180,3 +186,27 @@ def mood_emoji(v):
     if v>=70: return "😄"
     if v>=40: return "😐"
     return "😤"
+
+# ── МЕТ таблица (метаболический эквивалент) ──────────────────────────────────
+# Калории = вес(кг) × МЕТ × время(часы)
+
+MET_TABLE = {
+    "Силовая 🏋️":        {"light": 3.0, "medium": 5.0, "hard": 6.0},
+    "Кардио 🏃":          {"light": 5.0, "medium": 7.0, "hard": 9.0},
+    "Йога 🧘":            {"light": 2.5, "medium": 3.5, "hard": 4.0},
+    "Велосипед 🚴":       {"light": 4.0, "medium": 6.0, "hard": 8.0},
+    "Плавание 🏊":        {"light": 5.0, "medium": 7.0, "hard": 9.0},
+    "Командный спорт ⚽": {"light": 5.0, "medium": 7.0, "hard": 8.0},
+    "Растяжка 🤸":        {"light": 2.0, "medium": 2.5, "hard": 3.0},
+    "Интим 🔥":           {"light": 2.5, "medium": 3.5, "hard": 5.0},
+}
+
+DEFAULT_MET = {"light": 3.0, "medium": 5.0, "hard": 7.0}
+
+
+def calories_burned(weight_kg: float, workout_type: str,
+                    intensity: str, duration_min: int) -> int:
+    """Считает сожжённые калории по формуле Кatch-McArdle."""
+    met = MET_TABLE.get(workout_type, DEFAULT_MET).get(intensity, 5.0)
+    hours = duration_min / 60
+    return round(weight_kg * met * hours)

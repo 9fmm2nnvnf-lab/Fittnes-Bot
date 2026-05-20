@@ -151,13 +151,19 @@ ASK_WORKOUT_INTENSITY = """
 
 ASK_WORKOUT_DURATION = "⏱ Сколько минут тренировался? _(напиши число)_"
 
-def workout_result(char, workout_type, intensity, duration, xp_gain, coin_gain):
+def workout_result(char, workout_type, intensity, duration, xp_gain, coin_gain, burned=0):
     intensity_names = {"light":"Лёгкая 😌","medium":"Средняя 💪","hard":"Тяжёлая 🔥"}
+    eaten = char.get("calories_today", 0)
+    total_burned = char.get("calories_burned_today", 0)
+    balance = eaten - total_burned
+    balance_str = f"+{balance}" if balance >= 0 else str(balance)
     return f"""
 💥 *Тренировка засчитана!*
 
 🏋️ {workout_type}
-⚡ {intensity_names.get(intensity,'Средняя')} • ⏱ {duration} мин
+{intensity_names.get(intensity,'Средняя')} • ⏱ {duration} мин
+
+🔥 Сожжено за тренировку: *{burned} ккал*
 
 💪 Сила:      {stat_bar(char['strength'])} {char['strength']}
 ⚡ Энергия:   {stat_bar(char['energy'])} {char['energy']}
@@ -165,7 +171,9 @@ def workout_result(char, workout_type, intensity, duration, xp_gain, coin_gain):
 
 ✨ +{xp_gain} XP  •  +{coin_gain} 🪙
 
-_Норма КБЖУ пересчитана с учётом активности!_
+*Баланс дня:*
+🍽 Съедено: {eaten} ккал  •  🔥 Сожжено: {total_burned} ккал
+⚖️ Баланс: {balance_str} ккал
 """
 
 # ── /rest ─────────────────────────────────────────────────────────────────────
